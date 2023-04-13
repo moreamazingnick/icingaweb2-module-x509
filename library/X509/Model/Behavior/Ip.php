@@ -3,7 +3,9 @@
 namespace Icinga\Module\X509\Model\Behavior;
 
 use ipl\Orm\Behavior\Binary;
-use ipl\Orm\Contract\PropertyBehavior;
+use ipl\Orm\Query;
+use ipl\Sql\Adapter\Pgsql;
+use ipl\Stdlib\Filter\Condition;
 
 /**
  * Support automatically transformation of human-readable IP addresses into their respective packed
@@ -11,6 +13,9 @@ use ipl\Orm\Contract\PropertyBehavior;
  */
 class Ip extends Binary
 {
+    /** @var bool Whether the query is using a pgsql adapter */
+    protected $isPostgres = true;
+
     public function fromDb($value, $key, $_)
     {
         $value = parent::fromDb($value, $key, $_);
@@ -32,6 +37,31 @@ class Ip extends Binary
             return $value;
         }
 
-        return parent::toDb(str_pad(inet_pton($value), 16, "\0", STR_PAD_LEFT), $key, $_);
+        $pad = str_pad(inet_pton($value), 16, "\0", STR_PAD_LEFT);
+        if (! $this->isPostgres) {
+            return $pad;
+        }
+
+        return parent::toDb($pad, $key, $_);
+    }
+
+    public function setQuery(Query $query)
+    {
+        $this->rewriteSubjects = $this->properties;
+
+        if (! $query->getDb()->getAdapter() instanceof Pgsql) {
+            // Only process properties if the adapter is PostgreSQL.
+            $this->isPostgres = false;
+        }
+    }
+
+    public function rewriteCondition(Condition $condition, $relation = null)
+    {
+        if (! $this->isPostgres) {
+            // Only for PostgreSQL.
+            return;
+        }
+
+        parent::rewriteCondition($condition, $relation);
     }
 }
